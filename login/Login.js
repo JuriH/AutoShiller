@@ -8,8 +8,6 @@ require("dotenv").config({ path: "../.env" })
 const timeoutMs = 2000
 
 async function login(page, firstDetail, secondDetail) {
-  // await customScreenshot(page, "loginEmpty")
-
   try {
     // Wait for Login page to load
     await customWaitSelectorTimeout(
@@ -20,8 +18,6 @@ async function login(page, firstDetail, secondDetail) {
       "Successfully found login-form",
       "Was unable to find login-form"
     )
-
-    // await customScreenshot(page, "loginScreen")
 
     /**
      * Clear login form if needed
@@ -76,8 +72,6 @@ async function login(page, firstDetail, secondDetail) {
       secondDetail,
       "Password entered"
     )
-
-    // await customScreenshot(page, "loginFilled")
 
     // Wait until Login-button is enabled
     await customWaitSelector(

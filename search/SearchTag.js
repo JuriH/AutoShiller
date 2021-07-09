@@ -6,8 +6,6 @@ const customDevConsoleLog = require("../utils/customDevConsoleLog")
 const logEnabled = 0
 
 async function searchTag(page, tag) {
-  await customScreenshot(page, "searchTagWait")
-
   await customWaitSelectorTimeout(
     page,
     5000,
@@ -17,7 +15,10 @@ async function searchTag(page, tag) {
     "Was unable to find Search-field"
   )
 
-  const inputValue = await page.$eval('input[data-testid="SearchBox_Search_Input"]', el => el.value);
+  const inputValue = await page.$eval(
+    'input[data-testid="SearchBox_Search_Input"]',
+    (el) => el.value
+  )
   customDevConsoleLog(`InputValue: ${inputValue}`, logEnabled)
   if (inputValue.length > 0) {
     const input = await page.$('input[data-testid="SearchBox_Search_Input"]')

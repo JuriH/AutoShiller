@@ -62,7 +62,7 @@ async function start() {
 
   // Launch browser
   browser = await puppeteer.launch({
-    headless: true,
+    headless: false,
   })
 
   page = await browser.newPage()

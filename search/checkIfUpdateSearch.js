@@ -32,10 +32,7 @@ async function checkIfUpdateSearch(
   minEfficiencyPercentage
 ) {
   // Either Retry-error or enough already liked and re-tweeted tweets on timeline
-  if ((await checkForRetryError(page)) || currentTagTotalTweets === 25) {
-    // 25 for testing purposes
-
-    // await belowEfficiency(currentTagTotalLikeAndRTs, currentTagTotalTweets,  minTotalTweetsForCalc, minEfficiencyPercentage)
+  if ((await checkForRetryError(page)) || await belowEfficiency(currentTagTotalLikeAndRTs, currentTagTotalTweets,  minTotalTweetsForCalc, minEfficiencyPercentage)) {
 
     const topTabWasActive = await switchBetweenTopAndLatest(page) // Always change the tab
     if (!topTabWasActive) {
