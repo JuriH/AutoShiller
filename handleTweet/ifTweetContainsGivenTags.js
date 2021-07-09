@@ -3,7 +3,7 @@ async function ifTweetContainsGivenTags(tweetText, tags) {
   let bool = false
 
   tags.some((tag) => {
-    if (tweetText.includes(tag)) {
+    if (tweetText.includes(tag.toLowerCase())) {
       console.log("Tag '" + tag + "' found in tweet's text")
       bool = true
       return true

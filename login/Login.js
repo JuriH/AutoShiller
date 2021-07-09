@@ -2,110 +2,113 @@ const customWaitSelector = require("../utils/customWaitSelector")
 const customWaitSelectorTimeout = require("../utils/customWaitSelectorTimeout")
 const customInput = require("../utils/customInput")
 const customClicker = require("../utils/customClicker")
-const customScreenshot = require("../utils/customScreenshot")
 
-require("dotenv").config({path: "../.env"})
+require("dotenv").config({ path: "../.env" })
+
+const timeoutMs = 2000
 
 async function login(page, firstDetail, secondDetail) {
-  await customScreenshot(page, "loginEmpty")
+  // await customScreenshot(page, "loginEmpty")
 
-  // Wait for Login page to load
-  await customWaitSelector(
-    page,
-    "Waiting for login form to load",
-    'form',
-    "Login form loaded"
-  )
+  try {
+    // Wait for Login page to load
+    await customWaitSelectorTimeout(
+      page,
+      2000,
+      "Waiting for login form to load",
+      'input[name="session[username_or_email]"]',
+      "Successfully found login-form",
+      "Was unable to find login-form"
+    )
 
-  await customScreenshot(page, "loginScreen")
+    // await customScreenshot(page, "loginScreen")
 
-  /**
-   * Clear login form if needed
-   */
+    /**
+     * Clear login form if needed
+     */
 
-  // Clear email/username field if needed
-  if (
-    await page.evaluate(() => {
-      document.querySelector('input[name="session[username_or_email]"]')
-        .textContent.length > 0
-    })
-  ) {
+    // Clear email/username field if needed
+    if (
+      await page.evaluate(() => {
+        document.querySelector('input[name="session[username_or_email]"]')
+          .textContent.length > 0
+      })
+    ) {
+      await customInput(
+        page,
+        'input[name="session[username_or_email]"]',
+        "",
+        "Email/username field cleared"
+      )
+    }
+
+    // Clear password field if needed
+    if (
+      await page.evaluate(() => {
+        document.querySelector('input[name="session[password]"]').textContent
+          .length > 0
+      })
+    ) {
+      await customInput(
+        page,
+        'input[name="session[password]"]',
+        "",
+        "Password field cleared"
+      )
+    }
+
+    /**
+     * Fill out login form
+     */
+
+    // Username/email
     await customInput(
       page,
       'input[name="session[username_or_email]"]',
-      "",
-      "Email/username field cleared"
+      firstDetail,
+      "Email / username / phone number entered"
     )
-  }
 
-  // Clear password field if needed
-  if (
-    await page.evaluate(() => {
-      document.querySelector('input[name="session[password]"]').textContent
-        .length > 0
-    })
-  ) {
+    // Password
     await customInput(
       page,
       'input[name="session[password]"]',
-      "",
-      "Password field cleared"
+      secondDetail,
+      "Password entered"
     )
-  }
 
-  /**
-   * Fill out login form
-   */
+    // await customScreenshot(page, "loginFilled")
 
-  // Username/email
-  await customInput(
-    page,
-    'input[name="session[username_or_email]"]',
-    firstDetail,
-    "Email / username / phone number entered"
-  )
+    // Wait until Login-button is enabled
+    await customWaitSelector(
+      page,
+      "Waiting for Login button to be enabled",
+      'div[data-testid="LoginForm_Login_Button"]:not([disabled])',
+      "Login button enabled"
+    )
 
-  // Password
-  await customInput(
-    page,
-    'input[name="session[password]"]',
-    secondDetail,
-    "Password entered"
-  )
+    await customClicker(
+      page,
+      'div[data-testid="LoginForm_Login_Button"]:not([disabled])',
+      "Login button clicked"
+    )
 
-  await page.screenshot({path: "./screenshots/loginFilled.png"})
+    // Check if login is successful and loads frontpage, or fails and loads login page with error
 
-  // Wait until Login-button is enabled
-  await customWaitSelector(
-    page,
-    "Waiting for Login button to be enabled",
-    'div[data-testid="LoginForm_Login_Button"]:not([disabled])',
-    "Login button enabled"
-  )
+    let mappedSelectors = [
+      page.waitForSelector('header[role="banner"]', { timeout: timeoutMs }), // Successful login
+      page.waitForSelector("form", { timeout: timeoutMs }), // Failed login
+    ].map((currentValue, index) => currentValue.then((result) => [index]))
 
-  await customClicker(
-    page,
-    'div[data-testid="LoginForm_Login_Button"]:not([disabled])',
-    "Login button clicked"
-  )
+    const loginStatus = await Promise.race(mappedSelectors)
+      .then((value) => {
+        if (Number(value) === 0) return true // Because code above returns index number as Object, have to use Number() to convert it to regular number
+        return false
+      })
+      .catch((err) => {})
 
-  await customScreenshot(page, "x")
-
-  let loginStatus = await customWaitSelectorTimeout(
-    page,
-    5000,
-    "Waiting for frontpage",
-    'div[aria-label="Skip to recommended content"]',
-    "Successfully logged in",
-    "Failed to log in"
-  )
-
-  console.log("LoginStatus: " + loginStatus)
-
-  // If logging in failed, try it again with username instead of email address
-  if (loginStatus !== "loggedIn") return false
-
-  return true
+    return loginStatus
+  } catch (err) {}
 }
 
 module.exports = login

@@ -1,109 +1,192 @@
 const puppeteer = require("puppeteer")
+
+const setupPage = require("./utils/setupPage")
+
 const Login = require("./login/Login")
-const customWaitSelector = require("./utils/customWaitSelector")
-const customScreenshot = require("./utils/customScreenshot")
-const HandleTweetByIndex = require("./frontpage/HandleTweetByIndex")
-const customRefreshPage = require("./utils/customRefreshPage")
 const CreateLogFile = require("./storage/CreateLogFile")
 
-require("dotenv").config({path: ".env"})
+const customWaitSelectorTimeout = require("./utils/customWaitSelectorTimeout")
+
+const { TagIndexHolder } = require("./TagIndexHolder")
+
+const checkIfUpdateSearch = require("./search/checkIfUpdateSearch")
+const searchTag = require("./search/SearchTag")
+
+const getTweetText = require("./readTweetData/getTweetText")
+const ifHandleTweet = require("./handleTweet/ifHandleTweet")
+const isTweetNotLiked = require("./readTweetData/isTweetNotLiked")
+const isTweetNotRTd = require("./readTweetData/isTweetNotRTd")
+const getTweetUrl = require("./readTweetData/getTweetUrl")
+const logTweet = require("./storage/logTweet")
+
+const pickRandomNumberInRange = require("./utils/pickRandomNumberInRange")
+
+const customDevConsoleLog = require("./utils/customDevConsoleLog")
+const logEnabled = 1
+
+require("dotenv").config({ path: ".env" })
+
+const logFilePath = process.env.LOG_FILE_PATH
 
 let browser, page
 
-// For looping through tweets
-let index = 0 // Used for selecting and scrolling to a tweet
-let currentRetries = 0
-const maxRetries = 5
-const pageRefreshWaitMs = 5000
+// For dynamic delays between each tweet
+const minDelayMs = 500
+const maxDelayMs = 1000
 
-let testIndex = 0
-const maxTestIndex = 5
+// // Statistics for changing between search tags; If X% tweets already liked and re-tweeted with current tag, change to another tag
+let currentTagTotalTweets = 0
+let currentTagTotalLikeAndRTs = 0
+const minTotalTweetsForCalc = 10 // After X amount of tweets start calculating % of how many tweets have been new or matching
+const minEfficiencyPercentage = 25
 
-let handleTweets = true
+// To load desktop version of Twitter; Some resolutions load mobile version with no Search-field
+const deviceWidthPx = 1920
+const deviceHeightPx = 1080
+const cacheEnabled = false
 
-const tags = [
-  "$HAPPY",
-  "$Happy",
-  "$happy",
-  "#HappyCoin",
-  "#happycoin",
-  "#HAPPYCOIN",
-  "@the_happy_coin"
-]
+let handleTweets = true // To help switching between tags only every second time
+
+const tags = ["@the_happy_coin", "#HappyCoin", "$HAPPY", "#HappyMerch"]
+
+let tagIndexHolder = new TagIndexHolder() // Holds tagIndex variable
+
+const selectorSearchTimeline = 'div[aria-label="Timeline: Search timeline"]'
+
+/**
+ * Actual function starts here
+ */
 
 async function start() {
-
-  // Create log file for tracking and/or statistics
-  await CreateLogFile("./twitterLog.txt")
+  await CreateLogFile(logFilePath) // Creates log file automatically with not found
 
   // Launch browser
   browser = await puppeteer.launch({
     headless: true,
   })
 
-  // Open Twitter
   page = await browser.newPage()
-
-  // Enable console.log inside page.evaluate()
-  page.on("console", (consoleObj) => console.log(consoleObj.text()))
+  setupPage(page, cacheEnabled, deviceWidthPx, deviceHeightPx)
 
   await page.goto("https://twitter.com/login")
 
   // Login with different login details if necessary
   if (!(await Login(page, process.env.TWITTER_EMAIL, process.env.TWITTER_PASS)))
-    await Login(page, process.env.TWITTER_USER, process.env.TWITTER_PASS)
+    // Login with email
+    await Login(page, process.env.TWITTER_USER, process.env.TWITTER_PASS) // Login with username
 
-  // Wait for frontpage to load before taking screenshot
-  await customWaitSelector(
+  await searchTag(page, tags[tagIndexHolder.getTagIndex()])
+
+  await customWaitSelectorTimeout(
     page,
-    "Waiting for frontpage to load",
-    'div[aria-label="Timeline: Your Home Timeline"] > div > div:nth-child(1)',
-    "Frontpage loaded"
+    "Waiting for tweets to load",
+    `${selectorSearchTimeline} > div > div:nth-child(10)`,
+    "Tweets loaded successfully",
+    "Failed to load tweets"
   )
 
-  await customScreenshot(page, "frontpage")
+  while (handleTweets) {
+    try {
+      // console.log("TagIndex: " + tagIndexHolder.getTagIndex())
 
-  /**
-   * Returns true if tweet successfully handled, false if waiting for new tweets to load. Page refresh on nth false
-   */
-  while (testIndex < maxTestIndex) {
-    testIndex++
-    setTimeout(() => {}, 1000)
+      await new Promise((resolve) => {
+        setTimeout(() => {
+          resolve()
+        }, Number(pickRandomNumberInRange(minDelayMs, maxDelayMs))) // Pick random whole number in range for a delay between tweets
+      })
 
-    if (
-      await HandleTweetByIndex(
+      let updateSearch = await checkIfUpdateSearch(
+        // Handle switching tabs and changing tags
         page,
-        'div[aria-label="Timeline: Your Home Timeline"] > div',
-        index,
-        tags
-      )
-    ) {
-      // Matching or non-matching tweet found
-      if (currentRetries > 0) currentRetries = 0 // Reset retries counter
-      index++
-    } else {
-      // Couldn't get current tweet, waiting X ms for new one to load at current index
-      currentRetries++
-    }
-
-    // Was unable to load new tweet(s) for enough many times, refreshing page
-    if (currentRetries === maxRetries) {
-      currentRetries = 0
-      index = 0
-      const pageRefreshResult = await customRefreshPage(
-        page,
-        pageRefreshWaitMs,
-        "Refreshing page for new tweets",
-        'div[aria-label="Timeline: Your Home Timeline"] > div > div:nth-child(1)',
-        "Page successfully refreshed",
-        "Something went wrong refreshing the page; Unable to find first tweet"
+        tags,
+        tagIndexHolder,
+        currentTagTotalTweets,
+        currentTagTotalLikeAndRTs,
+        minTotalTweetsForCalc,
+        minEfficiencyPercentage
       )
 
-      // If unable to get first tweet after page refresh
-      if (!pageRefreshResult) handleTweets = false // Exit code, failed to load new tweets in time after page refresh
-    } else {
-      console.log("Waiting for new tweet(s) to load")
-      setTimeout(() => {}, 2000)
+      if (updateSearch) {
+        await page.keyboard.press("KeyJ")
+
+        currentTagTotalTweets = 0
+        currentTagTotalLikeAndRTs = 0
+      }
+
+      // Handle tweets here
+
+      // Check if tweet should be handled or not
+      const tweetText = await getTweetText(page)
+      const tweetStatus = await ifHandleTweet(
+        page,
+        tweetText,
+        tags,
+        `/${process.env.TWITTER_USER}`,
+        "/the_happy_coin"
+      )
+      if (tweetStatus !== "ok") throw `${tweetStatus}`
+
+      let logThisTweet = false // Determine if to log the tweet or not
+
+      if (await isTweetNotLiked(page)) {
+        console.log("Liking")
+        await page.keyboard.press("KeyL") // Press L to like current tweet
+        logThisTweet = true
+      } else {
+        console.log("Tweet already liked")
+      }
+
+      if (await isTweetNotRTd(page)) {
+        console.log("Re-tweeting")
+        await page.keyboard.press("KeyT") // Open re-tweeting menu
+
+        await customWaitSelectorTimeout(
+          page,
+          2000,
+          "Waiting for re-tweeting menu to appear",
+          'div[role="menuitem"]',
+          "Re-tweeting menu appeared",
+          "Re-tweeting menu didn't appear"
+        )
+
+        await page.keyboard.press("Enter")
+
+        await new Promise((resolve) => {
+          setTimeout(() => {
+            resolve()
+          }, 500)
+        })
+
+        if (!logThisTweet) logThisTweet = true
+      } else {
+        console.log("Tweet already re-tweeted")
+      }
+
+      if (logThisTweet) {
+        const tweetUrl = await getTweetUrl(page)
+        await logTweet(logFilePath, tweetUrl) // Log tweet to a text file in the given path
+      }
+    } catch (err) {
+      customDevConsoleLog("ERR: " + err, logEnabled)
+      if (
+        !(
+          err === "invalidTweet" ||
+          err === "unableToGetTweetText" ||
+          err === "notMatchingTweet" ||
+          err === "oldTweet" ||
+          err === "invalidOP"
+        )
+      ) {
+        handleTweets = false // Exit loop
+      }
+
+      if (err === "invalidTweet" && currentTagTotalTweets > 0) {
+        currentTagTotalTweets-- // Don't count invalid tweets towards the efficiency
+      }
+    } finally {
+      currentTagTotalTweets++
+
+      await page.keyboard.press("KeyJ")
     }
   }
 
